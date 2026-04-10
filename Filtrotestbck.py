@@ -51,6 +51,80 @@ html, body, [data-testid="stAppViewContainer"] {
     color: var(--text) !important;
 }
 
+/* ── Input fields: number_input, text_input ── */
+input[type="number"],
+input[type="text"],
+[data-testid="stNumberInput"] input,
+[data-testid="stTextInput"] input {
+    background-color: var(--bg3) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 4px !important;
+    caret-color: var(--accent) !important;
+}
+
+/* ── Number input +/- buttons ── */
+[data-testid="stNumberInput"] button {
+    background-color: var(--bg3) !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--border) !important;
+}
+
+[data-testid="stNumberInput"] button:hover {
+    background-color: var(--border) !important;
+    color: var(--text) !important;
+}
+
+/* ── Selectbox dropdown ── */
+[data-testid="stSelectbox"] > div > div,
+[data-baseweb="select"] > div {
+    background-color: var(--bg3) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+
+[data-baseweb="select"] span,
+[data-baseweb="select"] div {
+    color: var(--text) !important;
+    background-color: transparent !important;
+}
+
+/* ── Selectbox dropdown list ── */
+[data-baseweb="popover"] li,
+[role="option"] {
+    background-color: var(--bg3) !important;
+    color: var(--text) !important;
+}
+
+[role="option"]:hover {
+    background-color: var(--border) !important;
+}
+
+/* ── Multiselect tags ── */
+[data-baseweb="tag"] {
+    background-color: rgba(0,229,255,0.15) !important;
+    color: var(--accent) !important;
+}
+
+/* ── Slider track and thumb ── */
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
+    background-color: var(--accent) !important;
+    border-color: var(--accent) !important;
+}
+
+/* ── Labels above every widget ── */
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span {
+    color: var(--text) !important;
+}
+
+/* ── Text input URL field ── */
+[data-testid="stTextInput"] > div > div {
+    background-color: var(--bg3) !important;
+    border-color: var(--border) !important;
+}
+
 h1, h2, h3, h4 {
     font-family: 'Syne', sans-serif !important;
     font-weight: 800 !important;
@@ -149,17 +223,6 @@ h1, h2, h3, h4 {
     border-bottom: 2px solid var(--accent) !important;
 }
 
-.header-bar {
-    background: linear-gradient(90deg, var(--bg2), var(--bg3));
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.5rem 2rem;
-    margin-bottom: 2rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-
 .pill {
     display: inline-block;
     background: rgba(0,229,255,0.1);
@@ -178,9 +241,6 @@ h1, h2, h3, h4 {
     color: var(--accent2);
 }
 
-.row-win  { background-color: rgba(0,230,118,0.04) !important; }
-.row-loss { background-color: rgba(255,23,68,0.04)  !important; }
-
 div[data-testid="stVerticalBlock"] > div {
     background-color: transparent !important;
 }
@@ -191,11 +251,7 @@ div[data-testid="stVerticalBlock"] > div {
 # ─── GOOGLE SHEETS LOADER ─────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def load_from_gsheet(sheet_url: str) -> pd.DataFrame:
-    """Load data from public Google Sheet via CSV export."""
-    # Extract sheet ID
     sheet_id = sheet_url.split("/d/")[1].split("/")[0]
-    # Try to get 'Pretester Live' tab (gid varies)
-    # First try with default gid=0, then discover tabs
     csv_urls = [
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Pretester%20Live",
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&sheet=Pretester%20Live",
@@ -213,31 +269,14 @@ def load_from_gsheet(sheet_url: str) -> pd.DataFrame:
 
 
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean and type-cast the raw dataframe."""
     df = df.copy()
     df.columns = df.columns.str.strip()
 
-    # Rename if needed
-    rename_map = {
-        'Timestamp CST': 'Timestamp CST',
-        'Hora Local': 'Hora Local',
-        'Prediccion': 'Prediccion',
-        'Confianza %': 'Confianza %',
-        'Tier': 'Tier',
-        'Correcto': 'Correcto',
-        'Poly UP Ask': 'Poly UP Ask',
-        'Poly UP Bid': 'Poly UP Bid',
-        'Poly DOWN Ask': 'Poly DOWN Ask',
-        'Poly DOWN Bid': 'Poly DOWN Bid',
-    }
-
-    # Parse timestamp
     if 'Timestamp CST' in df.columns:
         df['Timestamp CST'] = pd.to_datetime(df['Timestamp CST'], errors='coerce')
-        df['Fecha'] = df['Timestamp CST'].dt.date
+        df['Fecha']   = df['Timestamp CST'].dt.date
         df['Hora_num'] = df['Timestamp CST'].dt.hour + df['Timestamp CST'].dt.minute / 60
 
-    # Parse hora local
     if 'Hora Local' in df.columns:
         def parse_hora(val):
             try:
@@ -255,16 +294,13 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                 return None
         df['HoraMin'] = df['Hora Local'].apply(parse_hora)
 
-    # Use Timestamp hour if HoraMin failed
     if 'Hora_num' in df.columns and ('HoraMin' not in df.columns or df['HoraMin'].isna().all()):
         df['HoraMin'] = (df['Hora_num'] * 60).astype(int)
 
-    # Numeric columns
     for col in ['Confianza %', 'Poly UP Ask', 'Poly UP Bid', 'Poly DOWN Ask', 'Poly DOWN Bid', 'UP %', 'DOWN %']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Uppercase categoricals
     for col in ['Prediccion', 'Tier', 'Correcto', 'Bet Side']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip().str.upper()
@@ -275,27 +311,22 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 # ─── STRATEGY ENGINE ──────────────────────────────────────────────────────────
 def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
-    """Apply filters and compute P&L for each trade."""
     data = df.copy()
 
-    # ── Filter: Tier
     if params['tiers']:
         data = data[data['Tier'].isin([t.upper() for t in params['tiers']])]
 
-    # ── Filter: Horas
     h_start = params['hora_start'] * 60 + params['hora_start_min']
     h_end   = params['hora_end']   * 60 + params['hora_end_min']
     if 'HoraMin' in data.columns:
         if h_start <= h_end:
             data = data[(data['HoraMin'] >= h_start) & (data['HoraMin'] <= h_end)]
-        else:  # overnight range
+        else:
             data = data[(data['HoraMin'] >= h_start) | (data['HoraMin'] <= h_end)]
 
-    # ── Filter: Confianza
     if 'Confianza %' in data.columns:
         data = data[data['Confianza %'] >= params['confianza_min']]
 
-    # ── Filter: Entry Price range (cuotas)
     def get_entry_price(row):
         pred = str(row.get('Prediccion', '')).upper()
         if pred == 'UP':
@@ -310,7 +341,6 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
                 (data['Entry Price'] <= params['quote_max'])]
     data = data[(data['Entry Price'] > 0) & (data['Entry Price'] < 1)]
 
-    # ── Compute Stake & P&L
     data['Stake USD'] = params['target_win'] * data['Entry Price'] / (1 - data['Entry Price'])
 
     def calc_pnl(row):
@@ -321,10 +351,10 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
             return -row['Stake USD'], 'Perdio'
 
     results = data.apply(calc_pnl, axis=1, result_type='expand')
-    data['PnL Trade'] = results[0]
-    data['Resultado'] = results[1]
+    data['PnL Trade']    = results[0]
+    data['Resultado']    = results[1]
     data['PnL Acumulado'] = data['PnL Trade'].cumsum()
-    data['Bet Side'] = data['Prediccion'].apply(lambda x: 'Up' if x == 'UP' else 'Down')
+    data['Bet Side']     = data['Prediccion'].apply(lambda x: 'Up' if x == 'UP' else 'Down')
 
     return data.reset_index(drop=True)
 
@@ -333,12 +363,12 @@ def build_resumen_dia(trades: pd.DataFrame) -> pd.DataFrame:
     if trades.empty or 'Fecha' not in trades.columns:
         return pd.DataFrame()
     g = trades.groupby('Fecha').agg(
-        Trades    = ('PnL Trade', 'count'),
-        Ganadas   = ('Resultado', lambda x: (x == 'Gano').sum()),
-        Perdidas  = ('Resultado', lambda x: (x == 'Perdio').sum()),
-        PnL_Total = ('PnL Trade', 'sum'),
-        Mejor     = ('PnL Trade', 'max'),
-        Peor      = ('PnL Trade', 'min'),
+        Trades      = ('PnL Trade', 'count'),
+        Ganadas     = ('Resultado', lambda x: (x == 'Gano').sum()),
+        Perdidas    = ('Resultado', lambda x: (x == 'Perdio').sum()),
+        PnL_Total   = ('PnL Trade', 'sum'),
+        Mejor       = ('PnL Trade', 'max'),
+        Peor        = ('PnL Trade', 'min'),
         Stake_Total = ('Stake USD', 'sum'),
     ).reset_index()
     g['Win Rate'] = g['Ganadas'] / g['Trades']
@@ -358,7 +388,6 @@ PLOT_TEMPLATE = dict(
 def plot_equity_curve(trades: pd.DataFrame):
     if trades.empty: return None
     fig = go.Figure()
-    colors = ['#00e676' if v >= 0 else '#ff1744' for v in trades['PnL Acumulado']]
     fig.add_trace(go.Scatter(
         x=trades.index,
         y=trades['PnL Acumulado'],
@@ -404,7 +433,7 @@ def plot_winrate_dia(resumen: pd.DataFrame):
     fig.add_hline(y=50, line_dash='dash', line_color='#5a7080', line_width=1)
     fig.add_hline(y=60, line_dash='dot',  line_color='#00e676', line_width=1)
     fig.update_layout(**PLOT_TEMPLATE, height=240,
-                      yaxis=dict(range=[0, 100], ticksuffix='%', gridcolor='#1a2d40'),
+                      yaxis=dict(range=[0,100], ticksuffix='%', gridcolor='#1a2d40'),
                       title=dict(text='WIN RATE POR DIA', font=dict(size=10, color='#00e5ff')))
     return fig
 
@@ -415,7 +444,7 @@ def plot_distribucion_horas(trades: pd.DataFrame):
     trades['Hora'] = (trades['HoraMin'] // 60).astype(int)
     grp = trades.groupby('Hora').agg(
         Trades  = ('PnL Trade', 'count'),
-        Ganadas = ('Resultado', lambda x: (x=='Gano').sum())
+        Ganadas = ('Resultado', lambda x: (x == 'Gano').sum())
     ).reset_index()
     grp['WR'] = grp['Ganadas'] / grp['Trades']
     fig = go.Figure()
@@ -445,7 +474,7 @@ def plot_distribucion_horas(trades: pd.DataFrame):
     return fig
 
 
-# ─── METRIC CARD HELPER ───────────────────────────────────────────────────────
+# ─── METRIC CARD ──────────────────────────────────────────────────────────────
 def metric_card(label, value, color='white', prefix='', suffix=''):
     st.markdown(f"""
     <div class="metric-card">
@@ -455,9 +484,8 @@ def metric_card(label, value, color='white', prefix='', suffix=''):
     """, unsafe_allow_html=True)
 
 
-# ─── MAIN APP ─────────────────────────────────────────────────────────────────
+# ─── MAIN ─────────────────────────────────────────────────────────────────────
 def main():
-    # ── Header ────────────────────────────────────────────────────────────────
     st.markdown("""
     <div style="display:flex; align-items:center; gap:1rem; margin-bottom:2rem;
                 padding:1.5rem 2rem; background:linear-gradient(90deg,#0d1520,#111d2e);
@@ -476,45 +504,36 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Sidebar ───────────────────────────────────────────────────────────────
+    # ── SIDEBAR ───────────────────────────────────────────────────────────────
     with st.sidebar:
         st.markdown('<div class="section-title">⚙ CONFIGURACION</div>', unsafe_allow_html=True)
 
-        # Google Sheet URL
         sheet_url = st.text_input(
             "Google Sheet URL",
             value="https://docs.google.com/spreadsheets/d/16WpLTAT7GebiuW3XFS7TyyYCSgq5_gyWrmQuqxwG37I/edit?usp=sharing",
-            help="URL pública del Google Sheet"
         )
 
         st.markdown("---")
         st.markdown('<div class="section-title">📋 ESTRATEGIA</div>', unsafe_allow_html=True)
-
         strategy_mode = st.selectbox(
-            "Modo de estrategia",
+            "Modo",
             ["🎯 Combo Strategy (Filtros activos)", "📊 Sin estrategia (todos los trades)"],
-            help="Combo Strategy aplica filtros de hora, confianza y cuotas"
         )
         use_filters = strategy_mode.startswith("🎯")
 
         st.markdown("---")
         st.markdown('<div class="section-title">🏷 TIER</div>', unsafe_allow_html=True)
-        tiers = st.multiselect(
-            "Tiers a incluir",
-            ['S', 'A', 'B', 'C', 'D'],
-            default=['D'],
-        )
+        tiers = st.multiselect("Tiers a incluir", ['S', 'A', 'B', 'C', 'D'], default=['D'])
 
         st.markdown("---")
         st.markdown('<div class="section-title">⏰ HORARIO CST</div>', unsafe_allow_html=True)
-
         col1, col2 = st.columns(2)
         with col1:
-            hora_start = st.number_input("Hora inicio", 0, 23, 15, step=1)
-            hora_start_min = st.selectbox("Min inicio", [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55], index=0)
+            hora_start     = st.number_input("Hora inicio", 0, 23, 15, step=1)
+            hora_start_min = st.selectbox("Min inicio", [0,5,10,15,20,25,30,35,40,45,50,55], index=0)
         with col2:
-            hora_end = st.number_input("Hora fin", 0, 23, 19, step=1)
-            hora_end_min = st.selectbox("Min fin", [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55], index=11)
+            hora_end     = st.number_input("Hora fin", 0, 23, 19, step=1)
+            hora_end_min = st.selectbox("Min fin",   [0,5,10,15,20,25,30,35,40,45,50,55], index=11)
 
         st.markdown("---")
         st.markdown('<div class="section-title">📈 CONFIANZA</div>', unsafe_allow_html=True)
@@ -522,8 +541,7 @@ def main():
             "Confianza mínima (%)",
             min_value=0.0, max_value=100.0,
             value=0.0 if not use_filters else 50.0,
-            step=1.0,
-            disabled=not use_filters
+            step=1.0, disabled=not use_filters
         )
 
         st.markdown("---")
@@ -532,36 +550,33 @@ def main():
             "Entry Price (Ask)",
             min_value=0.01, max_value=0.99,
             value=(0.38, 0.99) if not use_filters else (0.55, 0.99),
-            step=0.01,
-            format="%.2f",
-            disabled=not use_filters
+            step=0.01, format="%.2f", disabled=not use_filters
         )
 
         st.markdown("---")
         st.markdown('<div class="section-title">💰 OBJETIVO</div>', unsafe_allow_html=True)
         target_win = st.number_input(
             "Ganancia objetivo por trade ($)",
-            min_value=100, max_value=100000,
-            value=1000, step=100
+            min_value=100, max_value=100000, value=1000, step=100
         )
 
         st.markdown("---")
         run_btn = st.button("▶  EJECUTAR BACKTEST", use_container_width=True)
 
-    # ── Params ────────────────────────────────────────────────────────────────
+    # ── PARAMS ────────────────────────────────────────────────────────────────
     params = dict(
-        tiers         = tiers if tiers else ['D'],
-        hora_start    = int(hora_start),
-        hora_start_min= int(hora_start_min),
-        hora_end      = int(hora_end),
-        hora_end_min  = int(hora_end_min),
-        confianza_min = float(confianza_min) if use_filters else 0.0,
-        quote_min     = float(quote_range[0]) if use_filters else 0.01,
-        quote_max     = float(quote_range[1]) if use_filters else 0.99,
-        target_win    = float(target_win),
+        tiers          = tiers if tiers else ['D'],
+        hora_start     = int(hora_start),
+        hora_start_min = int(hora_start_min),
+        hora_end       = int(hora_end),
+        hora_end_min   = int(hora_end_min),
+        confianza_min  = float(confianza_min) if use_filters else 0.0,
+        quote_min      = float(quote_range[0]) if use_filters else 0.01,
+        quote_max      = float(quote_range[1]) if use_filters else 0.99,
+        target_win     = float(target_win),
     )
 
-    # ── Load & Run ─────────────────────────────────────────────────────────────
+    # ── LOAD & RUN ────────────────────────────────────────────────────────────
     if run_btn or 'trades' not in st.session_state:
         with st.spinner("Cargando datos desde Google Sheets..."):
             raw = load_from_gsheet(sheet_url)
@@ -579,7 +594,6 @@ def main():
         st.session_state['trades']  = trades
         st.session_state['resumen'] = resumen
         st.session_state['params']  = params
-        st.session_state['mode']    = strategy_mode
 
     trades  = st.session_state.get('trades',  pd.DataFrame())
     resumen = st.session_state.get('resumen', pd.DataFrame())
@@ -588,53 +602,43 @@ def main():
         st.warning("⚠️ Sin trades con los filtros aplicados. Ajusta los parámetros.")
         st.stop()
 
-    # ─── TAB LAYOUT ───────────────────────────────────────────────────────────
+    # ─── TABS ─────────────────────────────────────────────────────────────────
     tab1, tab2, tab3 = st.tabs(["  📊  DASHBOARD  ", "  📋  DETALLE  ", "  📅  RESUMEN POR DIA  "])
 
     # ══════════════════════════════════════════════════════════════════════════
     # TAB 1 — DASHBOARD
     # ══════════════════════════════════════════════════════════════════════════
     with tab1:
-        total   = len(trades)
-        ganadas = (trades['Resultado'] == 'Gano').sum()
-        perdidas= total - ganadas
-        wr      = ganadas / total if total > 0 else 0
-        pl_total= trades['PnL Trade'].sum()
-        avg_gan = target_win
-        avg_perd= trades[trades['Resultado']=='Perdio']['PnL Trade'].mean() if perdidas > 0 else 0
-        best    = trades['PnL Trade'].max()
-        worst   = trades['PnL Trade'].min()
+        total    = len(trades)
+        ganadas  = (trades['Resultado'] == 'Gano').sum()
+        perdidas = total - ganadas
+        wr       = ganadas / total if total > 0 else 0
+        pl_total = trades['PnL Trade'].sum()
+        avg_perd = trades[trades['Resultado'] == 'Perdio']['PnL Trade'].mean() if perdidas > 0 else 0
+        best     = trades['PnL Trade'].max()
+        worst    = trades['PnL Trade'].min()
 
-        # KPI row
         c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            metric_card("TOTAL TRADES", f"{total:,}", "cyan")
+        with c1: metric_card("TOTAL TRADES", f"{total:,}", "cyan")
         with c2:
-            wr_color = "green" if wr >= 0.6 else "yellow" if wr >= 0.5 else "red"
-            metric_card("WIN RATE", f"{wr*100:.1f}", wr_color, suffix="%")
-        with c3:
-            metric_card("GANADAS", f"{ganadas:,}", "green")
-        with c4:
-            metric_card("PERDIDAS", f"{perdidas:,}", "red")
+            wrc = "green" if wr >= 0.6 else "yellow" if wr >= 0.5 else "red"
+            metric_card("WIN RATE", f"{wr*100:.1f}", wrc, suffix="%")
+        with c3: metric_card("GANADAS",  f"{ganadas:,}",  "green")
+        with c4: metric_card("PERDIDAS", f"{perdidas:,}", "red")
         with c5:
-            pl_color = "green" if pl_total >= 0 else "red"
-            metric_card("P&L TOTAL", f"{pl_total:,.0f}", pl_color, prefix="$")
+            plc = "green" if pl_total >= 0 else "red"
+            metric_card("P&L TOTAL", f"{pl_total:,.0f}", plc, prefix="$")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
         c6, c7, c8, c9 = st.columns(4)
-        with c6:
-            metric_card("AVG GANANCIA", f"{avg_gan:,.0f}", "green", prefix="$")
-        with c7:
-            metric_card("AVG PERDIDA", f"{avg_perd:,.0f}", "red", prefix="$")
-        with c8:
-            metric_card("MEJOR TRADE", f"{best:,.0f}", "green", prefix="$")
-        with c9:
-            metric_card("PEOR TRADE", f"{worst:,.0f}", "red", prefix="$")
+        with c6: metric_card("AVG GANANCIA", f"{target_win:,.0f}", "green", prefix="$")
+        with c7: metric_card("AVG PERDIDA",  f"{avg_perd:,.0f}",  "red",   prefix="$")
+        with c8: metric_card("MEJOR TRADE",  f"{best:,.0f}",      "green", prefix="$")
+        with c9: metric_card("PEOR TRADE",   f"{worst:,.0f}",     "red",   prefix="$")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Charts
         col_a, col_b = st.columns([3, 2])
         with col_a:
             fig = plot_equity_curve(trades)
@@ -653,10 +657,10 @@ def main():
 
         # Filtros aplicados
         st.markdown('<div class="section-title" style="margin-top:1rem;">FILTROS APLICADOS</div>', unsafe_allow_html=True)
-        p = st.session_state.get('params', params)
+        p    = st.session_state.get('params', params)
         cols = st.columns(6)
         info = [
-            ("Tier",       ', '.join(p['tiers'])),
+            ("Tier",        ', '.join(p['tiers'])),
             ("Hora inicio", f"{p['hora_start']:02d}:{p['hora_start_min']:02d}"),
             ("Hora fin",    f"{p['hora_end']:02d}:{p['hora_end_min']:02d}"),
             ("Confianza ≥", f"{p['confianza_min']:.0f}%"),
@@ -684,10 +688,9 @@ def main():
         detail_cols = ['Timestamp CST', 'Fecha', 'Bet Side', 'Entry Price',
                        'Stake USD', 'Resultado', 'PnL Trade', 'PnL Acumulado',
                        'Poly UP Ask', 'Poly DOWN Ask', 'Poly UP Bid', 'Poly DOWN Bid']
-        avail = [c for c in detail_cols if c in trades.columns]
+        avail   = [c for c in detail_cols if c in trades.columns]
         df_show = trades[avail].copy()
 
-        # Format
         for c in ['Entry Price', 'Poly UP Ask', 'Poly DOWN Ask', 'Poly UP Bid', 'Poly DOWN Bid']:
             if c in df_show.columns:
                 df_show[c] = df_show[c].map(lambda x: f"{x:.2f}" if pd.notna(x) else '')
@@ -696,13 +699,11 @@ def main():
                 df_show[c] = df_show[c].map(lambda x: f"${x:,.2f}" if pd.notna(x) else '')
 
         def highlight(row):
-            color_win  = 'background-color: rgba(0,230,118,0.06)'
-            color_loss = 'background-color: rgba(255,23,68,0.06)'
             if 'Resultado' in row.index:
                 if row['Resultado'] == 'Gano':
-                    return [color_win] * len(row)
+                    return ['background-color: rgba(0,230,118,0.06)'] * len(row)
                 elif row['Resultado'] == 'Perdio':
-                    return [color_loss] * len(row)
+                    return ['background-color: rgba(255,23,68,0.06)'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
@@ -711,14 +712,9 @@ def main():
             height=520,
         )
 
-        # Download
         csv = trades[avail].to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "⬇  Descargar CSV",
-            csv,
-            file_name="bitpredict_detalle.csv",
-            mime="text/csv"
-        )
+        st.download_button("⬇  Descargar CSV", csv,
+                           file_name="bitpredict_detalle.csv", mime="text/csv")
 
     # ══════════════════════════════════════════════════════════════════════════
     # TAB 3 — RESUMEN POR DÍA
@@ -728,11 +724,11 @@ def main():
 
         if not resumen.empty:
             res_show = resumen.copy()
-            res_show['Win Rate'] = res_show['Win Rate'].map(lambda x: f"{x*100:.1f}%")
-            res_show['PnL_Total']    = res_show['PnL_Total'].map(lambda x: f"${x:,.2f}")
-            res_show['Mejor']        = res_show['Mejor'].map(lambda x: f"${x:,.2f}")
-            res_show['Peor']         = res_show['Peor'].map(lambda x: f"${x:,.2f}")
-            res_show['Stake_Total']  = res_show['Stake_Total'].map(lambda x: f"${x:,.2f}")
+            res_show['Win Rate']    = res_show['Win Rate'].map(lambda x: f"{x*100:.1f}%")
+            res_show['PnL_Total']   = res_show['PnL_Total'].map(lambda x: f"${x:,.2f}")
+            res_show['Mejor']       = res_show['Mejor'].map(lambda x: f"${x:,.2f}")
+            res_show['Peor']        = res_show['Peor'].map(lambda x: f"${x:,.2f}")
+            res_show['Stake_Total'] = res_show['Stake_Total'].map(lambda x: f"${x:,.2f}")
             res_show.columns = ['Fecha','Trades','Ganadas','Perdidas','Win Rate',
                                 'P&L Total','Mejor Trade','Peor Trade','Stake Total']
 
@@ -740,7 +736,7 @@ def main():
                 try:
                     pl = float(str(row['P&L Total']).replace('$','').replace(',',''))
                     if pl > 0: return ['background-color: rgba(0,230,118,0.06)'] * len(row)
-                    if pl < 0: return ['background-color: rgba(255,23,68,0.06)']  * len(row)
+                    if pl < 0: return ['background-color: rgba(255,23,68,0.06)'] * len(row)
                 except Exception:
                     pass
                 return [''] * len(row)
@@ -751,33 +747,28 @@ def main():
                 height=420,
             )
 
-            # Totals summary
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown('<div class="section-title">TOTALES ACUMULADOS</div>', unsafe_allow_html=True)
+
             total_trades_r = resumen['Trades'].sum()
             total_won_r    = resumen['Ganadas'].sum()
-            total_lost_r   = resumen['Perdidas'].sum()
             total_pl_r     = resumen['PnL_Total'].sum()
             total_stk_r    = resumen['Stake_Total'].sum()
+            avg_wr_r       = (total_won_r / total_trades_r) if total_trades_r > 0 else 0
             best_day       = resumen.loc[resumen['PnL_Total'].idxmax(), 'Fecha'] if not resumen.empty else '-'
             worst_day      = resumen.loc[resumen['PnL_Total'].idxmin(), 'Fecha'] if not resumen.empty else '-'
-            avg_wr_r       = (total_won_r / total_trades_r) if total_trades_r > 0 else 0
 
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            with c1: metric_card("TOTAL TRADES", f"{total_trades_r:,}", "cyan")
-            with c2: metric_card("WIN RATE GLOBAL", f"{avg_wr_r*100:.1f}", "green" if avg_wr_r>=0.5 else "red", suffix="%")
-            with c3: metric_card("P&L ACUMULADO", f"{total_pl_r:,.0f}", "green" if total_pl_r>=0 else "red", prefix="$")
-            with c4: metric_card("STAKE TOTAL", f"{total_stk_r:,.0f}", "white", prefix="$")
-            with c5: metric_card("MEJOR DIA", str(best_day), "green")
-            with c6: metric_card("PEOR DIA",  str(worst_day), "red")
+            with c1: metric_card("TOTAL TRADES",   f"{total_trades_r:,}",  "cyan")
+            with c2: metric_card("WIN RATE GLOBAL", f"{avg_wr_r*100:.1f}", "green" if avg_wr_r >= 0.5 else "red", suffix="%")
+            with c3: metric_card("P&L ACUMULADO",  f"{total_pl_r:,.0f}",  "green" if total_pl_r >= 0 else "red", prefix="$")
+            with c4: metric_card("STAKE TOTAL",    f"{total_stk_r:,.0f}", "white", prefix="$")
+            with c5: metric_card("MEJOR DIA",      str(best_day),         "green")
+            with c6: metric_card("PEOR DIA",       str(worst_day),        "red")
 
             csv2 = resumen.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "⬇  Descargar Resumen CSV",
-                csv2,
-                file_name="bitpredict_resumen.csv",
-                mime="text/csv"
-            )
+            st.download_button("⬇  Descargar Resumen CSV", csv2,
+                               file_name="bitpredict_resumen.csv", mime="text/csv")
         else:
             st.info("Sin datos para mostrar resumen.")
 
