@@ -15,17 +15,17 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
 
 :root {
-    --bg:        #080d14;
-    --bg2:       #0d1520;
-    --bg3:       #111d2e;
-    --accent:    #00e5ff;
-    --accent2:   #ff6b35;
-    --green:     #00e676;
-    --red:       #ff1744;
-    --yellow:    #ffd600;
-    --text:      #e8edf5;
-    --muted:     #5a7080;
-    --border:    #1a2d40;
+    --bg:      #080d14;
+    --bg2:     #0d1520;
+    --bg3:     #111d2e;
+    --accent:  #00e5ff;
+    --accent2: #ff6b35;
+    --green:   #00e676;
+    --red:     #ff1744;
+    --yellow:  #ffd600;
+    --text:    #e8edf5;
+    --muted:   #5a7080;
+    --border:  #1a2d40;
 }
 
 html, body, [data-testid="stAppViewContainer"] {
@@ -48,13 +48,6 @@ input[type="number"], input[type="text"],
     color: var(--text) !important;
     border: 1px solid var(--border) !important;
     border-radius: 4px !important;
-    caret-color: var(--accent) !important;
-}
-
-[data-testid="stNumberInput"] button {
-    background-color: var(--bg3) !important;
-    color: var(--accent) !important;
-    border: 1px solid var(--border) !important;
 }
 
 [data-testid="stSelectbox"] > div > div,
@@ -105,30 +98,35 @@ h1, h2, h3, h4 {
     color: var(--text) !important;
 }
 
-/* ── Botón ejecutar ── */
-[data-testid="stSidebar"] .element-container:last-child .stButton > button {
-    background: linear-gradient(135deg, var(--accent), #0099bb) !important;
-    color: #000 !important;
-    font-weight: 700 !important;
-}
-
-/* ── Todos los botones sidebar base ── */
+/* ── Todos los botones del sidebar ── */
 [data-testid="stSidebar"] .stButton > button {
     background: var(--bg3) !important;
     color: var(--muted) !important;
     border: 1px solid var(--border) !important;
     border-radius: 4px !important;
     font-family: 'Space Mono', monospace !important;
-    font-size: 0.7rem !important;
-    padding: 0.3rem 0.2rem !important;
-    letter-spacing: 0.04em !important;
+    font-size: 0.72rem !important;
+    padding: 0.3rem 0.1rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    min-height: 2rem !important;
+    letter-spacing: 0.02em !important;
     transition: all 0.15s !important;
     box-shadow: none !important;
+    width: 100% !important;
 }
 
 [data-testid="stSidebar"] .stButton > button:hover {
     border-color: var(--accent) !important;
     color: var(--accent) !important;
+}
+
+/* ── Botones de hora ACTIVOS (contienen corchetes) ── */
+[data-testid="stSidebar"] .stButton > button[data-active="true"] {
+    background: rgba(0,229,255,0.15) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+    font-weight: 700 !important;
 }
 
 .metric-card {
@@ -214,7 +212,6 @@ div[data-testid="stVerticalBlock"] > div { background-color: transparent !import
 """, unsafe_allow_html=True)
 
 
-# ─── GOOGLE SHEETS ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def load_from_gsheet(sheet_url: str) -> pd.DataFrame:
     sheet_id = sheet_url.split("/d/")[1].split("/")[0]
@@ -237,12 +234,10 @@ def load_from_gsheet(sheet_url: str) -> pd.DataFrame:
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.str.strip()
-
     if 'Timestamp CST' in df.columns:
         df['Timestamp CST'] = pd.to_datetime(df['Timestamp CST'], errors='coerce')
         df['Fecha']    = df['Timestamp CST'].dt.date
         df['Hora_num'] = df['Timestamp CST'].dt.hour + df['Timestamp CST'].dt.minute / 60
-
     if 'Hora Local' in df.columns:
         def parse_hora(val):
             try:
@@ -256,81 +251,55 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                 h = int(fval * 24)
                 m = int((fval * 24 - h) * 60)
                 return h * 60 + m
-            except Exception:
-                return None
+            except: return None
         df['HoraMin'] = df['Hora Local'].apply(parse_hora)
-
     if 'Hora_num' in df.columns and ('HoraMin' not in df.columns or df['HoraMin'].isna().all()):
         df['HoraMin'] = (df['Hora_num'] * 60).astype(int)
-
-    for col in ['Confianza %', 'Poly UP Ask', 'Poly UP Bid', 'Poly DOWN Ask', 'Poly DOWN Bid', 'UP %', 'DOWN %']:
+    for col in ['Confianza %','Poly UP Ask','Poly UP Bid','Poly DOWN Ask','Poly DOWN Bid','UP %','DOWN %']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    for col in ['Prediccion', 'Tier', 'Correcto', 'Bet Side']:
+    for col in ['Prediccion','Tier','Correcto','Bet Side']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip().str.upper()
-
     df = df.dropna(subset=['Timestamp CST'])
     return df
 
 
-# ─── STRATEGY ENGINE ───────────────────────────────────────────────────────────
 def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     data = df.copy()
-
-    # Tier
     if params['tiers']:
         data = data[data['Tier'].isin([t.upper() for t in params['tiers']])]
-
-    # Horas seleccionadas (lista de enteros 0-23)
     horas_sel = params.get('horas_sel', list(range(24)))
     if horas_sel and 'HoraMin' in data.columns:
         data['_h'] = (data['HoraMin'] // 60).astype(int)
         data = data[data['_h'].isin(horas_sel)]
         data = data.drop(columns=['_h'])
-
-    # Confianza
     if 'Confianza %' in data.columns:
         data = data[data['Confianza %'] >= params['confianza_min']]
-
     invertir = params.get('invertir', False)
-
     def get_bet(row):
         pred = str(row.get('Prediccion', '')).upper()
         direccion = ('DOWN' if pred == 'UP' else 'UP') if invertir else pred
         if direccion == 'UP':
-            return pd.Series({'Entry Price': row.get('Poly UP Ask', np.nan),
-                              'Bet Side': 'Up', 'Direccion Bet': 'UP'})
+            return pd.Series({'Entry Price': row.get('Poly UP Ask', np.nan), 'Bet Side': 'Up', 'Direccion Bet': 'UP'})
         else:
-            return pd.Series({'Entry Price': row.get('Poly DOWN Ask', np.nan),
-                              'Bet Side': 'Down', 'Direccion Bet': 'DOWN'})
-
+            return pd.Series({'Entry Price': row.get('Poly DOWN Ask', np.nan), 'Bet Side': 'Down', 'Direccion Bet': 'DOWN'})
     bet_info = data.apply(get_bet, axis=1)
     data['Entry Price']   = bet_info['Entry Price']
     data['Bet Side']      = bet_info['Bet Side']
     data['Direccion Bet'] = bet_info['Direccion Bet']
-
     data = data[data['Entry Price'].notna()]
-    data = data[(data['Entry Price'] >= params['quote_min']) &
-                (data['Entry Price'] <= params['quote_max'])]
+    data = data[(data['Entry Price'] >= params['quote_min']) & (data['Entry Price'] <= params['quote_max'])]
     data = data[(data['Entry Price'] > 0) & (data['Entry Price'] < 1)]
-
     data['Stake USD'] = params['target_win'] * data['Entry Price'] / (1 - data['Entry Price'])
-
     def calc_pnl(row):
         corr    = str(row.get('Correcto', '')).upper()
         ganamos = (corr != 'SI') if invertir else (corr == 'SI')
-        if ganamos:
-            return params['target_win'], 'Gano'
-        else:
-            return -row['Stake USD'], 'Perdio'
-
+        return (params['target_win'], 'Gano') if ganamos else (-row['Stake USD'], 'Perdio')
     results = data.apply(calc_pnl, axis=1, result_type='expand')
     data['PnL Trade']     = results[0]
     data['Resultado']     = results[1]
     data['PnL Acumulado'] = data['PnL Trade'].cumsum()
-
     return data.reset_index(drop=True)
 
 
@@ -339,8 +308,8 @@ def build_resumen_dia(trades: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     g = trades.groupby('Fecha').agg(
         Trades      = ('PnL Trade', 'count'),
-        Ganadas     = ('Resultado', lambda x: (x == 'Gano').sum()),
-        Perdidas    = ('Resultado', lambda x: (x == 'Perdio').sum()),
+        Ganadas     = ('Resultado', lambda x: (x=='Gano').sum()),
+        Perdidas    = ('Resultado', lambda x: (x=='Perdio').sum()),
         PnL_Total   = ('PnL Trade', 'sum'),
         Mejor       = ('PnL Trade', 'max'),
         Peor        = ('PnL Trade', 'min'),
@@ -350,7 +319,6 @@ def build_resumen_dia(trades: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-# ─── PLOTS ─────────────────────────────────────────────────────────────────────
 PLOT_TEMPLATE = dict(
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(13,21,32,0.8)',
@@ -378,7 +346,7 @@ def plot_pnl_por_dia(resumen):
     if resumen.empty: return None
     fig = go.Figure(go.Bar(
         x=resumen['Fecha'].astype(str), y=resumen['PnL_Total'],
-        marker_color=['#00e676' if v >= 0 else '#ff1744' for v in resumen['PnL_Total']],
+        marker_color=['#00e676' if v>=0 else '#ff1744' for v in resumen['PnL_Total']],
         hovertemplate='%{x}<br>$%{y:,.2f}<extra></extra>'
     ))
     fig.update_layout(**PLOT_TEMPLATE, height=240,
@@ -391,9 +359,9 @@ def plot_winrate_dia(resumen):
     if resumen.empty: return None
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=resumen['Fecha'].astype(str), y=resumen['Win Rate'] * 100,
-        marker_color=['#00e676' if v >= 60 else '#ffd600' if v >= 50 else '#ff1744'
-                      for v in resumen['Win Rate'] * 100],
+        x=resumen['Fecha'].astype(str), y=resumen['Win Rate']*100,
+        marker_color=['#00e676' if v>=60 else '#ffd600' if v>=50 else '#ff1744'
+                      for v in resumen['Win Rate']*100],
         hovertemplate='%{x}<br>%{y:.1f}%<extra></extra>'
     ))
     fig.add_hline(y=50, line_dash='dash', line_color='#5a7080', line_width=1)
@@ -402,7 +370,7 @@ def plot_winrate_dia(resumen):
                       title=dict(text='WIN RATE POR DIA', font=dict(size=10, color='#00e5ff')))
     fig.update_xaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
     fig.update_yaxes(gridcolor='#1a2d40', showline=False, zeroline=False,
-                     range=[0, 100], ticksuffix='%')
+                     range=[0,100], ticksuffix='%')
     return fig
 
 def plot_distribucion_horas(trades):
@@ -411,34 +379,28 @@ def plot_distribucion_horas(trades):
     t['Hora'] = (t['HoraMin'] // 60).astype(int)
     grp = t.groupby('Hora').agg(
         Trades  = ('PnL Trade', 'count'),
-        Ganadas = ('Resultado', lambda x: (x == 'Gano').sum())
+        Ganadas = ('Resultado', lambda x: (x=='Gano').sum())
     ).reset_index()
     grp['WR'] = grp['Ganadas'] / grp['Trades']
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=grp['Hora'].astype(str)+'h', y=grp['Trades'], name='Trades',
-        marker_color='rgba(0,229,255,0.4)',
-        hovertemplate='%{x}<br>Trades: %{y}<extra></extra>'
-    ))
-    fig.add_trace(go.Scatter(
-        x=grp['Hora'].astype(str)+'h', y=grp['WR']*100, name='Win Rate %',
-        yaxis='y2', line=dict(color='#ffd600', width=2), mode='lines+markers',
-        hovertemplate='%{x}<br>WR: %{y:.1f}%<extra></extra>'
-    ))
-    fig.update_layout(
-        **PLOT_TEMPLATE, height=260,
-        yaxis2=dict(overlaying='y', side='right', ticksuffix='%', range=[0,110],
-                    gridcolor='rgba(0,0,0,0)', showline=False, zeroline=False,
-                    tickfont=dict(color='#8a9db5')),
-        legend=dict(orientation='h', y=1.05, font=dict(size=9)),
-        title=dict(text='DISTRIBUCION POR HORA', font=dict(size=10, color='#00e5ff'))
-    )
+    fig.add_trace(go.Bar(x=grp['Hora'].astype(str)+'h', y=grp['Trades'], name='Trades',
+                         marker_color='rgba(0,229,255,0.4)',
+                         hovertemplate='%{x}<br>Trades: %{y}<extra></extra>'))
+    fig.add_trace(go.Scatter(x=grp['Hora'].astype(str)+'h', y=grp['WR']*100,
+                             name='Win Rate %', yaxis='y2',
+                             line=dict(color='#ffd600', width=2), mode='lines+markers',
+                             hovertemplate='%{x}<br>WR: %{y:.1f}%<extra></extra>'))
+    fig.update_layout(**PLOT_TEMPLATE, height=260,
+                      yaxis2=dict(overlaying='y', side='right', ticksuffix='%', range=[0,110],
+                                  gridcolor='rgba(0,0,0,0)', showline=False, zeroline=False,
+                                  tickfont=dict(color='#8a9db5')),
+                      legend=dict(orientation='h', y=1.05, font=dict(size=9)),
+                      title=dict(text='DISTRIBUCION POR HORA', font=dict(size=10, color='#00e5ff')))
     fig.update_xaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
     fig.update_yaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
     return fig
 
 
-# ─── METRIC CARD ───────────────────────────────────────────────────────────────
 def metric_card(label, value, color='white', prefix='', suffix=''):
     st.markdown(f"""
     <div class="metric-card">
@@ -448,10 +410,9 @@ def metric_card(label, value, color='white', prefix='', suffix=''):
     """, unsafe_allow_html=True)
 
 
-# ─── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    if 'direccion'  not in st.session_state: st.session_state['direccion']  = 'seguir'
-    if 'horas_sel'  not in st.session_state: st.session_state['horas_sel']  = list(range(24))
+    if 'direccion' not in st.session_state: st.session_state['direccion'] = 'seguir'
+    if 'horas_sel' not in st.session_state: st.session_state['horas_sel'] = list(range(24))
 
     st.markdown("""
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;
@@ -471,9 +432,6 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # SIDEBAR
-    # ══════════════════════════════════════════════════════════════════════════
     with st.sidebar:
         st.markdown('<div class="section-title">⚙ CONFIGURACION</div>', unsafe_allow_html=True)
         sheet_url = st.text_input(
@@ -509,8 +467,8 @@ def main():
         """, unsafe_allow_html=True)
         cs, ci = st.columns(2)
         with cs:
-            if st.button("✅ Seguir", key="btn_seguir", use_container_width=True):
-                st.session_state['direccion'] = 'seguir'; st.rerun()
+            if st.button("✅ Seguir",   key="btn_seguir",   use_container_width=True):
+                st.session_state['direccion'] = 'seguir';   st.rerun()
         with ci:
             if st.button("🔄 Invertir", key="btn_invertir", use_container_width=True):
                 st.session_state['direccion'] = 'invertir'; st.rerun()
@@ -520,19 +478,18 @@ def main():
         st.markdown('<div class="section-title">⏰ HORARIO CST</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-family:Space Mono,monospace;font-size:0.58rem;color:#5a7080;margin-bottom:0.5rem;">Toca cada hora para activar / desactivar</div>', unsafe_allow_html=True)
 
-        # Botones rápidos
         qa, qb, qc = st.columns(3)
         with qa:
-            if st.button("Todas", key="h_all", use_container_width=True):
+            if st.button("Todas",  key="h_all",   use_container_width=True):
                 st.session_state['horas_sel'] = list(range(24)); st.rerun()
         with qb:
-            if st.button("Ninguna", key="h_none", use_container_width=True):
+            if st.button("Ninguna", key="h_none",  use_container_width=True):
                 st.session_state['horas_sel'] = []; st.rerun()
         with qc:
-            if st.button("Noche", key="h_night", use_container_width=True):
+            if st.button("Noche",  key="h_night", use_container_width=True):
                 st.session_state['horas_sel'] = [0,1,2,3,4,5,6,7,20,21,22,23]; st.rerun()
 
-        # Grid 4 filas × 6 columnas
+        # Grid 4 filas × 6 columnas — label limpio: solo el número
         horas_activas = set(st.session_state['horas_sel'])
         for fila in range(4):
             cols_h = st.columns(6)
@@ -540,8 +497,8 @@ def main():
                 hora = fila * 6 + idx
                 activa = hora in horas_activas
                 with col:
-                    # Estilo inline para el botón activo/inactivo
-                    label = f"{'●' if activa else '○'}{hora:02d}"
+                    # Activo: número con asterisco al frente; inactivo: solo número
+                    label = f"*{hora}" if activa else str(hora)
                     if st.button(label, key=f"h_{hora}", use_container_width=True):
                         if activa:
                             st.session_state['horas_sel'].remove(hora)
@@ -549,36 +506,45 @@ def main():
                             st.session_state['horas_sel'].append(hora)
                         st.rerun()
 
-        # Inyectar color verde a los botones activos via JS/HTML trick con markdown
-        horas_activas_js = list(horas_activas)
-        active_keys = [f"h_{h}" for h in horas_activas_js]
-        # Usamos CSS para colorear botones activos (por data-testid no disponible,
-        # usamos un truco: inyectamos un bloque de estilos que target los botones
-        # que contienen "●" en su texto)
-        st.markdown("""
-        <style>
-        [data-testid="stSidebar"] .stButton > button:has-text("●") {
-            border-color: #00e5ff !important;
-            color: #00e5ff !important;
-            background: rgba(0,229,255,0.12) !important;
-        }
-        /* Fallback: cualquier botón de hora que empiece con ● */
-        [data-testid="stSidebar"] button[kind="secondary"] {
-            font-size: 0.65rem !important;
-            padding: 0.25rem 0 !important;
-        }
-        </style>
+        # CSS dinámico para pintar botones activos (los que empiezan con *)
+        # Streamlit no expone atributos custom, pero sí podemos usar nth-child
+        # La forma más fiable: inyectar un <script> que coloree por contenido
+        active_hours = sorted(horas_activas)
+        st.markdown(f"""
+        <script>
+        (function() {{
+            function colorHourBtns() {{
+                const active = {active_hours};
+                const sidebar = document.querySelector('[data-testid="stSidebar"]');
+                if (!sidebar) return;
+                const btns = sidebar.querySelectorAll('button');
+                btns.forEach(btn => {{
+                    const txt = btn.innerText.trim();
+                    const match = txt.match(/^\*(\d+)$/);
+                    if (match) {{
+                        btn.style.background = 'rgba(0,229,255,0.18)';
+                        btn.style.borderColor = '#00e5ff';
+                        btn.style.color = '#00e5ff';
+                        btn.style.fontWeight = '700';
+                        btn.innerText = match[1];  // quitar el asterisco visualmente
+                    }}
+                }});
+            }}
+            setTimeout(colorHourBtns, 300);
+            setTimeout(colorHourBtns, 800);
+        }})();
+        </script>
         """, unsafe_allow_html=True)
 
-        # Resumen horas seleccionadas
+        # Resumen horas activas
         horas_sorted = sorted(st.session_state['horas_sel'])
         if horas_sorted:
-            horas_str = ' '.join([f"{h:02d}h" for h in horas_sorted])
+            horas_str = '  '.join([f"{h:02d}h" for h in horas_sorted])
             st.markdown(f"""
             <div style="background:rgba(0,229,255,0.05);border:1px solid #1a2d40;
                         border-radius:4px;padding:0.4rem 0.6rem;margin-top:0.3rem;
                         font-family:'Space Mono',monospace;font-size:0.58rem;
-                        color:#00e5ff;line-height:1.6;word-break:break-all;">
+                        color:#00e5ff;line-height:1.8;word-break:break-all;">
                 {horas_str}
             </div>
             """, unsafe_allow_html=True)
@@ -594,33 +560,27 @@ def main():
         # ── CONFIANZA ─────────────────────────────────────────────────────────
         st.markdown("---")
         st.markdown('<div class="section-title">📈 CONFIANZA</div>', unsafe_allow_html=True)
-        confianza_min = st.slider(
-            "Confianza mínima (%)",
-            min_value=0.0, max_value=100.0,
-            value=0.0 if not use_filters else 50.0,
-            step=1.0, disabled=not use_filters
-        )
+        confianza_min = st.slider("Confianza mínima (%)",
+                                   min_value=0.0, max_value=100.0,
+                                   value=0.0 if not use_filters else 50.0,
+                                   step=1.0, disabled=not use_filters)
 
         st.markdown("---")
         st.markdown('<div class="section-title">💹 RANGO DE CUOTAS</div>', unsafe_allow_html=True)
-        quote_range = st.slider(
-            "Entry Price (Ask)",
-            min_value=0.01, max_value=0.99,
-            value=(0.38, 0.99) if not use_filters else (0.55, 0.99),
-            step=0.01, format="%.2f", disabled=not use_filters
-        )
+        quote_range = st.slider("Entry Price (Ask)",
+                                 min_value=0.01, max_value=0.99,
+                                 value=(0.38, 0.99) if not use_filters else (0.55, 0.99),
+                                 step=0.01, format="%.2f", disabled=not use_filters)
 
         st.markdown("---")
         st.markdown('<div class="section-title">💰 OBJETIVO</div>', unsafe_allow_html=True)
-        target_win = st.number_input(
-            "Ganancia objetivo ($)", min_value=100, max_value=100000, value=1000, step=100
-        )
+        target_win = st.number_input("Ganancia objetivo ($)",
+                                      min_value=100, max_value=100000, value=1000, step=100)
 
         st.markdown("---")
         run_btn = st.button("▶  EJECUTAR BACKTEST", use_container_width=True, key="run_main")
 
     invertir = st.session_state['direccion'] == 'invertir'
-
     params = dict(
         tiers         = tiers if tiers else ['D'],
         horas_sel     = sorted(st.session_state.get('horas_sel', list(range(24)))),
@@ -631,7 +591,6 @@ def main():
         invertir      = invertir,
     )
 
-    # ── LOAD & RUN ─────────────────────────────────────────────────────────────
     if run_btn or 'trades' not in st.session_state:
         with st.spinner("Cargando datos desde Google Sheets..."):
             raw = load_from_gsheet(sheet_url)
@@ -653,33 +612,28 @@ def main():
         st.warning("⚠️ Sin trades con los filtros aplicados. Ajusta los parámetros.")
         st.stop()
 
-    # Banner modo activo
     if invertir:
         st.markdown("""<div style="background:rgba(255,23,68,0.08);border:1px solid #ff1744;
-                    border-radius:6px;padding:0.5rem 1.2rem;margin-bottom:1rem;
-                    font-family:'Space Mono',monospace;font-size:0.7rem;color:#ff1744;">
-                    🔄 MODO INVERTIR — apostando lo contrario a la predicción</div>""",
-                    unsafe_allow_html=True)
+            border-radius:6px;padding:0.5rem 1.2rem;margin-bottom:1rem;
+            font-family:'Space Mono',monospace;font-size:0.7rem;color:#ff1744;">
+            🔄 MODO INVERTIR — apostando lo contrario a la predicción</div>""",
+            unsafe_allow_html=True)
     else:
         st.markdown("""<div style="background:rgba(0,230,118,0.06);border:1px solid #00e676;
-                    border-radius:6px;padding:0.5rem 1.2rem;margin-bottom:1rem;
-                    font-family:'Space Mono',monospace;font-size:0.7rem;color:#00e676;">
-                    ✅ MODO SEGUIR — apostando según la predicción</div>""",
-                    unsafe_allow_html=True)
+            border-radius:6px;padding:0.5rem 1.2rem;margin-bottom:1rem;
+            font-family:'Space Mono',monospace;font-size:0.7rem;color:#00e676;">
+            ✅ MODO SEGUIR — apostando según la predicción</div>""",
+            unsafe_allow_html=True)
 
-    # ── TABS ───────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3 = st.tabs(["  📊  DASHBOARD  ", "  📋  DETALLE  ", "  📅  RESUMEN POR DIA  "])
+    tab1, tab2, tab3 = st.tabs(["  📊  DASHBOARD  ","  📋  DETALLE  ","  📅  RESUMEN POR DIA  "])
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB 1 — DASHBOARD
-    # ══════════════════════════════════════════════════════════════════════════
     with tab1:
         total    = len(trades)
-        ganadas  = (trades['Resultado'] == 'Gano').sum()
+        ganadas  = (trades['Resultado']=='Gano').sum()
         perdidas = total - ganadas
-        wr       = ganadas / total if total > 0 else 0
+        wr       = ganadas/total if total>0 else 0
         pl_total = trades['PnL Trade'].sum()
-        avg_perd = trades[trades['Resultado']=='Perdio']['PnL Trade'].mean() if perdidas > 0 else 0
+        avg_perd = trades[trades['Resultado']=='Perdio']['PnL Trade'].mean() if perdidas>0 else 0
         best     = trades['PnL Trade'].max()
         worst    = trades['PnL Trade'].min()
 
@@ -690,11 +644,9 @@ def main():
             metric_card("WIN RATE", f"{wr*100:.1f}", wrc, suffix="%")
         with c3: metric_card("GANADAS",  f"{ganadas:,}",  "green")
         with c4: metric_card("PERDIDAS", f"{perdidas:,}", "red")
-        with c5:
-            metric_card("P&L TOTAL", f"{pl_total:,.0f}", "green" if pl_total>=0 else "red", prefix="$")
+        with c5: metric_card("P&L TOTAL", f"{pl_total:,.0f}", "green" if pl_total>=0 else "red", prefix="$")
 
         st.markdown("<br>", unsafe_allow_html=True)
-
         c6,c7,c8,c9 = st.columns(4)
         with c6: metric_card("AVG GANANCIA", f"{target_win:,.0f}", "green", prefix="$")
         with c7: metric_card("AVG PERDIDA",  f"{avg_perd:,.0f}",  "red",   prefix="$")
@@ -702,8 +654,7 @@ def main():
         with c9: metric_card("PEOR TRADE",   f"{worst:,.0f}",     "red",   prefix="$")
 
         st.markdown("<br>", unsafe_allow_html=True)
-
-        ca, cb = st.columns([3,2])
+        ca,cb = st.columns([3,2])
         with ca:
             fig = plot_equity_curve(trades)
             if fig: st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
@@ -711,7 +662,7 @@ def main():
             fig = plot_pnl_por_dia(resumen)
             if fig: st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
 
-        cc, cd = st.columns([2,3])
+        cc,cd = st.columns([2,3])
         with cc:
             fig = plot_winrate_dia(resumen)
             if fig: st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
@@ -719,11 +670,10 @@ def main():
             fig = plot_distribucion_horas(trades)
             if fig: st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
 
-        # Filtros aplicados
         st.markdown('<div class="section-title" style="margin-top:1rem;">FILTROS APLICADOS</div>', unsafe_allow_html=True)
-        p    = st.session_state.get('params', params)
-        hs   = sorted(p.get('horas_sel', []))
-        hs_s = ', '.join([f"{h:02d}h" for h in hs]) if hs else '—'
+        p   = st.session_state.get('params', params)
+        hs  = sorted(p.get('horas_sel', []))
+        hs_s = ', '.join([f"{h}h" for h in hs]) if hs else '—'
         cols = st.columns(5)
         info = [
             ("Tier",        ', '.join(p['tiers'])),
@@ -740,14 +690,11 @@ def main():
                             padding:0.7rem 0.8rem;text-align:center;">
                     <div style="font-family:'Space Mono',monospace;font-size:0.55rem;
                                 color:#5a7080;text-transform:uppercase;letter-spacing:0.08em;">{lbl}</div>
-                    <div style="font-family:'Space Mono',monospace;font-size:0.75rem;
+                    <div style="font-family:'Space Mono',monospace;font-size:0.72rem;
                                 color:{color};font-weight:700;margin-top:0.2rem;word-break:break-all;">{val}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB 2 — DETALLE
-    # ══════════════════════════════════════════════════════════════════════════
     with tab2:
         st.markdown('<div class="section-title">DETALLE DE TRADES</div>', unsafe_allow_html=True)
         detail_cols = ['Timestamp CST','Fecha','Prediccion','Bet Side','Entry Price',
@@ -761,22 +708,15 @@ def main():
         for c in ['Stake USD','PnL Trade','PnL Acumulado']:
             if c in df_show.columns:
                 df_show[c] = df_show[c].map(lambda x: f"${x:,.2f}" if pd.notna(x) else '')
-
         def highlight(row):
             if 'Resultado' in row.index:
-                if row['Resultado'] == 'Gano':
-                    return ['background-color:rgba(0,230,118,0.06)']*len(row)
-                elif row['Resultado'] == 'Perdio':
-                    return ['background-color:rgba(255,23,68,0.06)']*len(row)
+                if row['Resultado']=='Gano':   return ['background-color:rgba(0,230,118,0.06)']*len(row)
+                if row['Resultado']=='Perdio': return ['background-color:rgba(255,23,68,0.06)']*len(row)
             return ['']*len(row)
-
         st.dataframe(df_show.style.apply(highlight, axis=1), use_container_width=True, height=520)
         csv = trades[avail].to_csv(index=False).encode('utf-8')
         st.download_button("⬇  Descargar CSV", csv, file_name="bitpredict_detalle.csv", mime="text/csv")
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB 3 — RESUMEN POR DÍA
-    # ══════════════════════════════════════════════════════════════════════════
     with tab3:
         st.markdown('<div class="section-title">RESUMEN POR DIA</div>', unsafe_allow_html=True)
         if not resumen.empty:
@@ -788,15 +728,13 @@ def main():
             res_show['Stake_Total'] = res_show['Stake_Total'].map(lambda x: f"${x:,.2f}")
             res_show.columns = ['Fecha','Trades','Ganadas','Perdidas','Win Rate',
                                 'P&L Total','Mejor Trade','Peor Trade','Stake Total']
-
             def hl_res(row):
                 try:
                     pl = float(str(row['P&L Total']).replace('$','').replace(',',''))
-                    if pl > 0: return ['background-color:rgba(0,230,118,0.06)']*len(row)
-                    if pl < 0: return ['background-color:rgba(255,23,68,0.06)']*len(row)
+                    if pl>0: return ['background-color:rgba(0,230,118,0.06)']*len(row)
+                    if pl<0: return ['background-color:rgba(255,23,68,0.06)']*len(row)
                 except: pass
                 return ['']*len(row)
-
             st.dataframe(res_show.style.apply(hl_res, axis=1), use_container_width=True, height=420)
 
             st.markdown("<br>", unsafe_allow_html=True)
@@ -805,10 +743,9 @@ def main():
             tw  = resumen['Ganadas'].sum()
             tpl = resumen['PnL_Total'].sum()
             tsk = resumen['Stake_Total'].sum()
-            awr = (tw/tt) if tt > 0 else 0
+            awr = (tw/tt) if tt>0 else 0
             bd  = resumen.loc[resumen['PnL_Total'].idxmax(),'Fecha'] if not resumen.empty else '-'
             wd  = resumen.loc[resumen['PnL_Total'].idxmin(),'Fecha'] if not resumen.empty else '-'
-
             c1,c2,c3,c4,c5,c6 = st.columns(6)
             with c1: metric_card("TOTAL TRADES",    f"{tt:,}",    "cyan")
             with c2: metric_card("WIN RATE GLOBAL", f"{awr*100:.1f}", "green" if awr>=0.5 else "red", suffix="%")
@@ -816,7 +753,6 @@ def main():
             with c4: metric_card("STAKE TOTAL",     f"{tsk:,.0f}", "white", prefix="$")
             with c5: metric_card("MEJOR DIA",       str(bd), "green")
             with c6: metric_card("PEOR DIA",        str(wd), "red")
-
             csv2 = resumen.to_csv(index=False).encode('utf-8')
             st.download_button("⬇  Descargar Resumen CSV", csv2,
                                file_name="bitpredict_resumen.csv", mime="text/csv")
