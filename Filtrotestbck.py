@@ -2,12 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
-from datetime import time
-import gspread
-from google.oauth2.service_account import Credentials
-import json
-import os
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -51,7 +45,6 @@ html, body, [data-testid="stAppViewContainer"] {
     color: var(--text) !important;
 }
 
-/* ── Input fields: number_input, text_input ── */
 input[type="number"],
 input[type="text"],
 [data-testid="stNumberInput"] input,
@@ -63,7 +56,6 @@ input[type="text"],
     caret-color: var(--accent) !important;
 }
 
-/* ── Number input +/- buttons ── */
 [data-testid="stNumberInput"] button {
     background-color: var(--bg3) !important;
     color: var(--accent) !important;
@@ -75,7 +67,6 @@ input[type="text"],
     color: var(--text) !important;
 }
 
-/* ── Selectbox dropdown ── */
 [data-testid="stSelectbox"] > div > div,
 [data-baseweb="select"] > div {
     background-color: var(--bg3) !important;
@@ -89,7 +80,6 @@ input[type="text"],
     background-color: transparent !important;
 }
 
-/* ── Selectbox dropdown list ── */
 [data-baseweb="popover"] li,
 [role="option"] {
     background-color: var(--bg3) !important;
@@ -100,26 +90,22 @@ input[type="text"],
     background-color: var(--border) !important;
 }
 
-/* ── Multiselect tags ── */
 [data-baseweb="tag"] {
     background-color: rgba(0,229,255,0.15) !important;
     color: var(--accent) !important;
 }
 
-/* ── Slider track and thumb ── */
 [data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
     background-color: var(--accent) !important;
     border-color: var(--accent) !important;
 }
 
-/* ── Labels above every widget ── */
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] p,
 [data-testid="stSidebar"] span {
     color: var(--text) !important;
 }
 
-/* ── Text input URL field ── */
 [data-testid="stTextInput"] > div > div {
     background-color: var(--bg3) !important;
     border-color: var(--border) !important;
@@ -274,7 +260,7 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     if 'Timestamp CST' in df.columns:
         df['Timestamp CST'] = pd.to_datetime(df['Timestamp CST'], errors='coerce')
-        df['Fecha']   = df['Timestamp CST'].dt.date
+        df['Fecha']    = df['Timestamp CST'].dt.date
         df['Hora_num'] = df['Timestamp CST'].dt.hour + df['Timestamp CST'].dt.minute / 60
 
     if 'Hora Local' in df.columns:
@@ -351,10 +337,10 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
             return -row['Stake USD'], 'Perdio'
 
     results = data.apply(calc_pnl, axis=1, result_type='expand')
-    data['PnL Trade']    = results[0]
-    data['Resultado']    = results[1]
+    data['PnL Trade']     = results[0]
+    data['Resultado']     = results[1]
     data['PnL Acumulado'] = data['PnL Trade'].cumsum()
-    data['Bet Side']     = data['Prediccion'].apply(lambda x: 'Up' if x == 'UP' else 'Down')
+    data['Bet Side']      = data['Prediccion'].apply(lambda x: 'Up' if x == 'UP' else 'Down')
 
     return data.reset_index(drop=True)
 
@@ -375,13 +361,11 @@ def build_resumen_dia(trades: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-# ─── PLOTTING HELPERS ─────────────────────────────────────────────────────────
+# ─── PLOTTING ─────────────────────────────────────────────────────────────────
 PLOT_TEMPLATE = dict(
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(13,21,32,0.8)',
     font=dict(family='Space Mono, monospace', color='#8a9db5', size=11),
-    xaxis=dict(gridcolor='#1a2d40', showline=False, zeroline=False),
-    yaxis=dict(gridcolor='#1a2d40', showline=False, zeroline=False),
     margin=dict(l=10, r=10, t=30, b=10),
 )
 
@@ -401,6 +385,8 @@ def plot_equity_curve(trades: pd.DataFrame):
     fig.add_hline(y=0, line_color='#1a2d40', line_width=1)
     fig.update_layout(**PLOT_TEMPLATE, height=280, showlegend=False,
                       title=dict(text='EQUITY CURVE', font=dict(size=10, color='#00e5ff')))
+    fig.update_xaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
+    fig.update_yaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
     return fig
 
 
@@ -415,6 +401,8 @@ def plot_pnl_por_dia(resumen: pd.DataFrame):
     ))
     fig.update_layout(**PLOT_TEMPLATE, height=240,
                       title=dict(text='P&L POR DIA', font=dict(size=10, color='#00e5ff')))
+    fig.update_xaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
+    fig.update_yaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
     return fig
 
 
@@ -433,8 +421,10 @@ def plot_winrate_dia(resumen: pd.DataFrame):
     fig.add_hline(y=50, line_dash='dash', line_color='#5a7080', line_width=1)
     fig.add_hline(y=60, line_dash='dot',  line_color='#00e676', line_width=1)
     fig.update_layout(**PLOT_TEMPLATE, height=240,
-                      yaxis=dict(range=[0,100], ticksuffix='%', gridcolor='#1a2d40'),
                       title=dict(text='WIN RATE POR DIA', font=dict(size=10, color='#00e5ff')))
+    fig.update_xaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
+    fig.update_yaxes(gridcolor='#1a2d40', showline=False, zeroline=False,
+                     range=[0, 100], ticksuffix='%')
     return fig
 
 
@@ -465,12 +455,20 @@ def plot_distribucion_horas(trades: pd.DataFrame):
         hovertemplate='%{x}<br>WR: %{y:.1f}%<extra></extra>'
     ))
     fig.update_layout(
-        **PLOT_TEMPLATE, height=260,
-        yaxis2=dict(overlaying='y', side='right', ticksuffix='%',
-                    gridcolor='rgba(0,0,0,0)', range=[0, 110]),
+        **PLOT_TEMPLATE,
+        height=260,
+        yaxis2=dict(
+            overlaying='y', side='right',
+            ticksuffix='%', range=[0, 110],
+            gridcolor='rgba(0,0,0,0)',
+            showline=False, zeroline=False,
+            tickfont=dict(color='#8a9db5')
+        ),
         legend=dict(orientation='h', y=1.05, font=dict(size=9)),
         title=dict(text='DISTRIBUCION POR HORA', font=dict(size=10, color='#00e5ff'))
     )
+    fig.update_xaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
+    fig.update_yaxes(gridcolor='#1a2d40', showline=False, zeroline=False)
     return fig
 
 
@@ -655,7 +653,6 @@ def main():
             fig = plot_distribucion_horas(trades)
             if fig: st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        # Filtros aplicados
         st.markdown('<div class="section-title" style="margin-top:1rem;">FILTROS APLICADOS</div>', unsafe_allow_html=True)
         p    = st.session_state.get('params', params)
         cols = st.columns(6)
@@ -759,12 +756,12 @@ def main():
             worst_day      = resumen.loc[resumen['PnL_Total'].idxmin(), 'Fecha'] if not resumen.empty else '-'
 
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            with c1: metric_card("TOTAL TRADES",   f"{total_trades_r:,}",  "cyan")
-            with c2: metric_card("WIN RATE GLOBAL", f"{avg_wr_r*100:.1f}", "green" if avg_wr_r >= 0.5 else "red", suffix="%")
-            with c3: metric_card("P&L ACUMULADO",  f"{total_pl_r:,.0f}",  "green" if total_pl_r >= 0 else "red", prefix="$")
-            with c4: metric_card("STAKE TOTAL",    f"{total_stk_r:,.0f}", "white", prefix="$")
-            with c5: metric_card("MEJOR DIA",      str(best_day),         "green")
-            with c6: metric_card("PEOR DIA",       str(worst_day),        "red")
+            with c1: metric_card("TOTAL TRADES",    f"{total_trades_r:,}",  "cyan")
+            with c2: metric_card("WIN RATE GLOBAL", f"{avg_wr_r*100:.1f}",  "green" if avg_wr_r >= 0.5 else "red", suffix="%")
+            with c3: metric_card("P&L ACUMULADO",   f"{total_pl_r:,.0f}",  "green" if total_pl_r >= 0 else "red", prefix="$")
+            with c4: metric_card("STAKE TOTAL",     f"{total_stk_r:,.0f}", "white", prefix="$")
+            with c5: metric_card("MEJOR DIA",       str(best_day),         "green")
+            with c6: metric_card("PEOR DIA",        str(worst_day),        "red")
 
             csv2 = resumen.to_csv(index=False).encode('utf-8')
             st.download_button("⬇  Descargar Resumen CSV", csv2,
