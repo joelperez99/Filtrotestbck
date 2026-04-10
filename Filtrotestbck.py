@@ -142,6 +142,69 @@ h1, h2, h3, h4 {
     box-shadow: 0 4px 20px rgba(0,229,255,0.3) !important;
 }
 
+/* ── Botones Seguir / Invertir ── */
+.dir-btn-active-seguir {
+    display: block;
+    width: 100%;
+    padding: 0.55rem 0;
+    background: rgba(0,230,118,0.15) !important;
+    border: 2px solid #00e676 !important;
+    border-radius: 6px;
+    color: #00e676 !important;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 0.4rem;
+}
+
+.dir-btn-active-invertir {
+    display: block;
+    width: 100%;
+    padding: 0.55rem 0;
+    background: rgba(255,23,68,0.15) !important;
+    border: 2px solid #ff1744 !important;
+    border-radius: 6px;
+    color: #ff1744 !important;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 0.4rem;
+}
+
+.dir-btn-inactive {
+    display: block;
+    width: 100%;
+    padding: 0.55rem 0;
+    background: transparent !important;
+    border: 1px solid #1a2d40 !important;
+    border-radius: 6px;
+    color: #5a7080 !important;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 0.4rem;
+}
+
+/* Override default stButton solo para los direction buttons */
+[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important;
+    color: var(--muted) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 0.8rem !important;
+    padding: 0.45rem 0.5rem !important;
+    width: 100% !important;
+}
+
 .metric-card {
     background: var(--bg2);
     border: 1px solid var(--border);
@@ -183,14 +246,7 @@ h1, h2, h3, h4 {
     margin-bottom: 1rem;
 }
 
-.stDataFrame {
-    background-color: var(--bg2) !important;
-}
-
-[data-testid="stMetricValue"] {
-    font-family: 'Space Mono', monospace !important;
-    color: var(--accent) !important;
-}
+.stDataFrame { background-color: var(--bg2) !important; }
 
 .stTabs [data-baseweb="tab-list"] {
     background-color: var(--bg2) !important;
@@ -313,15 +369,29 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     if 'Confianza %' in data.columns:
         data = data[data['Confianza %'] >= params['confianza_min']]
 
-    def get_entry_price(row):
-        pred = str(row.get('Prediccion', '')).upper()
-        if pred == 'UP':
-            return row.get('Poly UP Ask', np.nan)
-        elif pred == 'DOWN':
-            return row.get('Poly DOWN Ask', np.nan)
-        return np.nan
+    invertir = params.get('invertir', False)
 
-    data['Entry Price'] = data.apply(get_entry_price, axis=1)
+    def get_bet(row):
+        pred = str(row.get('Prediccion', '')).upper()
+        # Si invertir: apostamos lo contrario
+        if invertir:
+            direccion = 'DOWN' if pred == 'UP' else 'UP'
+        else:
+            direccion = pred
+
+        if direccion == 'UP':
+            ep       = row.get('Poly UP Ask', np.nan)
+            bet_side = 'Up'
+        else:
+            ep       = row.get('Poly DOWN Ask', np.nan)
+            bet_side = 'Down'
+        return pd.Series({'Entry Price': ep, 'Bet Side': bet_side, 'Direccion Bet': direccion})
+
+    bet_info = data.apply(get_bet, axis=1)
+    data['Entry Price']   = bet_info['Entry Price']
+    data['Bet Side']      = bet_info['Bet Side']
+    data['Direccion Bet'] = bet_info['Direccion Bet']
+
     data = data[data['Entry Price'].notna()]
     data = data[(data['Entry Price'] >= params['quote_min']) &
                 (data['Entry Price'] <= params['quote_max'])]
@@ -330,8 +400,18 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     data['Stake USD'] = params['target_win'] * data['Entry Price'] / (1 - data['Entry Price'])
 
     def calc_pnl(row):
-        corr = str(row.get('Correcto', '')).upper()
-        if corr == 'SI':
+        corr      = str(row.get('Correcto', '')).upper()
+        dir_real  = str(row.get('Direccion Real', row.get('Direccion Real', ''))).upper()
+        dir_bet   = str(row.get('Direccion Bet', '')).upper()
+
+        if invertir:
+            # Ganamos si la dirección real es OPUESTA a la predicción
+            # es decir, si dir_bet == dir_real
+            ganamos = (dir_bet == dir_real) if dir_real else (corr == 'NO')
+        else:
+            ganamos = (corr == 'SI')
+
+        if ganamos:
             return params['target_win'], 'Gano'
         else:
             return -row['Stake USD'], 'Perdio'
@@ -340,7 +420,6 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     data['PnL Trade']     = results[0]
     data['Resultado']     = results[1]
     data['PnL Acumulado'] = data['PnL Trade'].cumsum()
-    data['Bet Side']      = data['Prediccion'].apply(lambda x: 'Up' if x == 'UP' else 'Down')
 
     return data.reset_index(drop=True)
 
@@ -379,7 +458,6 @@ def plot_equity_curve(trades: pd.DataFrame):
         line=dict(color='#00e5ff', width=2),
         fill='tozeroy',
         fillcolor='rgba(0,229,255,0.05)',
-        name='P&L Acumulado',
         hovertemplate='Trade %{x}<br>P&L: $%{y:,.2f}<extra></extra>'
     ))
     fig.add_hline(y=0, line_color='#1a2d40', line_width=1)
@@ -455,8 +533,7 @@ def plot_distribucion_horas(trades: pd.DataFrame):
         hovertemplate='%{x}<br>WR: %{y:.1f}%<extra></extra>'
     ))
     fig.update_layout(
-        **PLOT_TEMPLATE,
-        height=260,
+        **PLOT_TEMPLATE, height=260,
         yaxis2=dict(
             overlaying='y', side='right',
             ticksuffix='%', range=[0, 110],
@@ -484,6 +561,11 @@ def metric_card(label, value, color='white', prefix='', suffix=''):
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 def main():
+
+    # Inicializar estado de dirección
+    if 'direccion' not in st.session_state:
+        st.session_state['direccion'] = 'seguir'
+
     st.markdown("""
     <div style="display:flex; align-items:center; gap:1rem; margin-bottom:2rem;
                 padding:1.5rem 2rem; background:linear-gradient(90deg,#0d1520,#111d2e);
@@ -523,6 +605,37 @@ def main():
         st.markdown('<div class="section-title">🏷 TIER</div>', unsafe_allow_html=True)
         tiers = st.multiselect("Tiers a incluir", ['S', 'A', 'B', 'C', 'D'], default=['D'])
 
+        # ── DIRECCION ─────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown('<div class="section-title">🎲 DIRECCION DE APUESTA</div>', unsafe_allow_html=True)
+
+        es_seguir   = st.session_state['direccion'] == 'seguir'
+        es_invertir = st.session_state['direccion'] == 'invertir'
+
+        # Badge de estado actual
+        badge_color = "#00e676" if es_seguir else "#ff1744"
+        badge_text  = "✅ SIGUIENDO PREDICCION" if es_seguir else "🔄 INVIRTIENDO PREDICCION"
+        st.markdown(f"""
+        <div style="background: rgba({'0,230,118' if es_seguir else '255,23,68'},0.1);
+                    border: 1px solid {'#00e676' if es_seguir else '#ff1744'};
+                    border-radius: 6px; padding: 0.5rem 0.8rem;
+                    font-family: 'Space Mono', monospace; font-size: 0.6rem;
+                    color: {'#00e676' if es_seguir else '#ff1744'};
+                    text-align: center; letter-spacing: 0.08em; margin-bottom: 0.6rem;">
+            {badge_text}
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_s, col_i = st.columns(2)
+        with col_s:
+            if st.button("✅ Seguir", use_container_width=True, key="btn_seguir"):
+                st.session_state['direccion'] = 'seguir'
+                st.rerun()
+        with col_i:
+            if st.button("🔄 Invertir", use_container_width=True, key="btn_invertir"):
+                st.session_state['direccion'] = 'invertir'
+                st.rerun()
+
         st.markdown("---")
         st.markdown('<div class="section-title">⏰ HORARIO CST</div>', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
@@ -561,6 +674,8 @@ def main():
         st.markdown("---")
         run_btn = st.button("▶  EJECUTAR BACKTEST", use_container_width=True)
 
+    invertir = st.session_state['direccion'] == 'invertir'
+
     # ── PARAMS ────────────────────────────────────────────────────────────────
     params = dict(
         tiers          = tiers if tiers else ['D'],
@@ -572,6 +687,7 @@ def main():
         quote_min      = float(quote_range[0]) if use_filters else 0.01,
         quote_max      = float(quote_range[1]) if use_filters else 0.99,
         target_win     = float(target_win),
+        invertir       = invertir,
     )
 
     # ── LOAD & RUN ────────────────────────────────────────────────────────────
@@ -599,6 +715,27 @@ def main():
     if trades.empty:
         st.warning("⚠️ Sin trades con los filtros aplicados. Ajusta los parámetros.")
         st.stop()
+
+    # ── BANNER MODO ACTIVO ────────────────────────────────────────────────────
+    p_saved = st.session_state.get('params', params)
+    if p_saved.get('invertir', False):
+        st.markdown("""
+        <div style="background:rgba(255,23,68,0.08); border:1px solid #ff1744;
+                    border-radius:6px; padding:0.6rem 1.2rem; margin-bottom:1rem;
+                    font-family:'Space Mono',monospace; font-size:0.7rem;
+                    color:#ff1744; letter-spacing:0.08em;">
+            🔄 MODO INVERTIR ACTIVO — apostando lo contrario a la predicción
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background:rgba(0,230,118,0.06); border:1px solid #00e676;
+                    border-radius:6px; padding:0.6rem 1.2rem; margin-bottom:1rem;
+                    font-family:'Space Mono',monospace; font-size:0.7rem;
+                    color:#00e676; letter-spacing:0.08em;">
+            ✅ MODO SEGUIR ACTIVO — apostando según la predicción
+        </div>
+        """, unsafe_allow_html=True)
 
     # ─── TABS ─────────────────────────────────────────────────────────────────
     tab1, tab2, tab3 = st.tabs(["  📊  DASHBOARD  ", "  📋  DETALLE  ", "  📅  RESUMEN POR DIA  "])
@@ -655,7 +792,7 @@ def main():
 
         st.markdown('<div class="section-title" style="margin-top:1rem;">FILTROS APLICADOS</div>', unsafe_allow_html=True)
         p    = st.session_state.get('params', params)
-        cols = st.columns(6)
+        cols = st.columns(7)
         info = [
             ("Tier",        ', '.join(p['tiers'])),
             ("Hora inicio", f"{p['hora_start']:02d}:{p['hora_start_min']:02d}"),
@@ -663,16 +800,18 @@ def main():
             ("Confianza ≥", f"{p['confianza_min']:.0f}%"),
             ("Entry Price", f"{p['quote_min']:.2f} – {p['quote_max']:.2f}"),
             ("Objetivo",    f"${p['target_win']:,.0f}"),
+            ("Dirección",   "INVERTIR 🔄" if p.get('invertir') else "SEGUIR ✅"),
         ]
         for col, (lbl, val) in zip(cols, info):
             with col:
+                color = "#ff1744" if lbl == "Dirección" and p.get('invertir') else "#00e5ff"
                 st.markdown(f"""
                 <div style="background:#0d1520; border:1px solid #1a2d40; border-radius:6px;
-                            padding:0.7rem 1rem; text-align:center;">
-                    <div style="font-family:'Space Mono',monospace; font-size:0.6rem;
-                                color:#5a7080; text-transform:uppercase; letter-spacing:0.1em;">{lbl}</div>
-                    <div style="font-family:'Space Mono',monospace; font-size:0.85rem;
-                                color:#00e5ff; font-weight:700; margin-top:0.2rem;">{val}</div>
+                            padding:0.7rem 0.8rem; text-align:center;">
+                    <div style="font-family:'Space Mono',monospace; font-size:0.55rem;
+                                color:#5a7080; text-transform:uppercase; letter-spacing:0.08em;">{lbl}</div>
+                    <div style="font-family:'Space Mono',monospace; font-size:0.8rem;
+                                color:{color}; font-weight:700; margin-top:0.2rem;">{val}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -682,7 +821,7 @@ def main():
     with tab2:
         st.markdown('<div class="section-title">DETALLE DE TRADES</div>', unsafe_allow_html=True)
 
-        detail_cols = ['Timestamp CST', 'Fecha', 'Bet Side', 'Entry Price',
+        detail_cols = ['Timestamp CST', 'Fecha', 'Prediccion', 'Bet Side', 'Entry Price',
                        'Stake USD', 'Resultado', 'PnL Trade', 'PnL Acumulado',
                        'Poly UP Ask', 'Poly DOWN Ask', 'Poly UP Bid', 'Poly DOWN Bid']
         avail   = [c for c in detail_cols if c in trades.columns]
