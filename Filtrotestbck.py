@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import io
 
 st.set_page_config(
     page_title="BitPredict Strategy Backtester",
@@ -405,6 +406,27 @@ def plot_distribucion_horas(trades):
     return fig
 
 
+def build_excel_download(trades: pd.DataFrame) -> bytes:
+    col_map = {
+        'Timestamp CST': 'Timestamp Monterrey',
+        'Bet Side':       'Bet Side',
+        'Stake USD':      'Stake',
+        'Entry Price':    'Entry Price',
+        'Correcto':       'Correcto',
+        'PnL Trade':      'PL',
+    }
+    avail = {k: v for k, v in col_map.items() if k in trades.columns}
+    df_xl = trades[list(avail.keys())].rename(columns=avail).copy()
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_xl.to_excel(writer, index=False, sheet_name='Trades Filtrados')
+        ws = writer.sheets['Trades Filtrados']
+        for col_cells in ws.columns:
+            max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col_cells)
+            ws.column_dimensions[col_cells[0].column_letter].width = max_len + 4
+    return output.getvalue()
+
+
 def metric_card(label, value, color='white', prefix='', suffix=''):
     st.markdown(f"""
     <div class="metric-card">
@@ -418,23 +440,46 @@ def main():
     if 'direccion' not in st.session_state: st.session_state['direccion'] = 'seguir'
     if 'horas_sel' not in st.session_state: st.session_state['horas_sel'] = list(range(24))
 
-    st.markdown("""
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;
-                padding:1.5rem 2rem;background:linear-gradient(90deg,#0d1520,#111d2e);
-                border:1px solid #1a2d40;border-radius:8px;">
-        <div style="font-size:2rem;">₿</div>
-        <div>
-            <div style="font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;
-                        color:#e8edf5;letter-spacing:-0.02em;">BitPredict Strategy Backtester</div>
-            <div style="font-family:'Space Mono',monospace;font-size:0.65rem;
-                        color:#5a7080;letter-spacing:0.15em;">POLYMARKET · TIER D · BTC BINARY</div>
+    _trades_ready = 'trades' in st.session_state and not st.session_state['trades'].empty
+    _col_hdr, _col_dl = st.columns([5, 1])
+    with _col_hdr:
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;
+                    padding:1.5rem 2rem;background:linear-gradient(90deg,#0d1520,#111d2e);
+                    border:1px solid #1a2d40;border-radius:8px;">
+            <div style="font-size:2rem;">₿</div>
+            <div>
+                <div style="font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;
+                            color:#e8edf5;letter-spacing:-0.02em;">BitPredict Strategy Backtester</div>
+                <div style="font-family:'Space Mono',monospace;font-size:0.65rem;
+                            color:#5a7080;letter-spacing:0.15em;">POLYMARKET · TIER D · BTC BINARY</div>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:0.5rem;">
+                <span class="pill">LIVE DATA</span>
+                <span class="pill orange">GOOGLE SHEETS</span>
+            </div>
         </div>
-        <div style="margin-left:auto;display:flex;gap:0.5rem;">
-            <span class="pill">LIVE DATA</span>
-            <span class="pill orange">GOOGLE SHEETS</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    with _col_dl:
+        st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+        if _trades_ready:
+            _excel_bytes = build_excel_download(st.session_state['trades'])
+            st.download_button(
+                label="⬇ Excel",
+                data=_excel_bytes,
+                file_name="bitpredict_trades.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="dl_excel_header",
+            )
+        else:
+            st.markdown("""
+            <div style="background:#0d1520;border:1px solid #1a2d40;border-radius:6px;
+                        padding:0.6rem;text-align:center;font-family:'Space Mono',monospace;
+                        font-size:0.6rem;color:#5a7080;margin-top:0.3rem;">
+                ⬇ Excel<br><span style='font-size:0.5rem;'>ejecuta backtest</span>
+            </div>
+            """, unsafe_allow_html=True)
 
     with st.sidebar:
         st.markdown('<div class="section-title">⚙ CONFIGURACION</div>', unsafe_allow_html=True)
