@@ -289,8 +289,12 @@ def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     data['Bet Side']      = bet_info['Bet Side']
     data['Direccion Bet'] = bet_info['Direccion Bet']
     data = data[data['Entry Price'].notna()]
+    # Rango base de inclusión
     data = data[(data['Entry Price'] >= params['quote_min']) & (data['Entry Price'] <= params['quote_max'])]
     data = data[(data['Entry Price'] > 0) & (data['Entry Price'] < 1)]
+    # Aplicar rangos de exclusión
+    for exc_min, exc_max in params.get('exclude_ranges', []):
+        data = data[~((data['Entry Price'] >= exc_min) & (data['Entry Price'] <= exc_max))]
     data['Stake USD'] = params['target_win'] * data['Entry Price'] / (1 - data['Entry Price'])
     def calc_pnl(row):
         corr    = str(row.get('Correcto', '')).upper()
@@ -497,7 +501,6 @@ def main():
                 hora = fila * 6 + idx
                 activa = hora in horas_activas
                 with col:
-                    # Activo: número con asterisco al frente; inactivo: solo número
                     label = f"*{hora}" if activa else str(hora)
                     if st.button(label, key=f"h_{hora}", use_container_width=True):
                         if activa:
@@ -506,9 +509,6 @@ def main():
                             st.session_state['horas_sel'].append(hora)
                         st.rerun()
 
-        # CSS dinámico para pintar botones activos (los que empiezan con *)
-        # Streamlit no expone atributos custom, pero sí podemos usar nth-child
-        # La forma más fiable: inyectar un <script> que coloree por contenido
         active_hours = sorted(horas_activas)
         st.markdown(f"""
         <script>
@@ -526,7 +526,7 @@ def main():
                         btn.style.borderColor = '#00e5ff';
                         btn.style.color = '#00e5ff';
                         btn.style.fontWeight = '700';
-                        btn.innerText = match[1];  // quitar el asterisco visualmente
+                        btn.innerText = match[1];
                     }}
                 }});
             }}
@@ -536,7 +536,6 @@ def main():
         </script>
         """, unsafe_allow_html=True)
 
-        # Resumen horas activas
         horas_sorted = sorted(st.session_state['horas_sel'])
         if horas_sorted:
             horas_str = '  '.join([f"{h:02d}h" for h in horas_sorted])
@@ -565,12 +564,50 @@ def main():
                                    value=0.0 if not use_filters else 50.0,
                                    step=1.0, disabled=not use_filters)
 
+        # ── RANGO DE CUOTAS ───────────────────────────────────────────────────
         st.markdown("---")
         st.markdown('<div class="section-title">💹 RANGO DE CUOTAS</div>', unsafe_allow_html=True)
-        quote_range = st.slider("Entry Price (Ask)",
+
+        # Rango base de inclusión
+        quote_range = st.slider("Rango base (incluir)",
                                  min_value=0.01, max_value=0.99,
                                  value=(0.38, 0.99) if not use_filters else (0.55, 0.99),
                                  step=0.01, format="%.2f", disabled=not use_filters)
+
+        # 4 rangos de exclusión
+        st.markdown("""
+        <div style="font-family:'Space Mono',monospace;font-size:0.58rem;
+                    color:#ff6b35;text-transform:uppercase;letter-spacing:0.12em;
+                    margin-top:0.6rem;margin-bottom:0.4rem;">
+            ✂ Rangos a excluir
+        </div>
+        """, unsafe_allow_html=True)
+
+        exclude_ranges = []
+        exc_defaults = [(0.01, 0.20), (0.01, 0.20), (0.01, 0.20), (0.01, 0.20)]
+
+        for i in range(1, 5):
+            exc_enabled = st.checkbox(
+                f"Exclusión {i}",
+                key=f"exc_enabled_{i}",
+                value=False,
+                disabled=not use_filters
+            )
+            if exc_enabled and use_filters:
+                exc_range = st.slider(
+                    f"Rango excluido {i}",
+                    min_value=0.01, max_value=0.99,
+                    value=exc_defaults[i - 1],
+                    step=0.01, format="%.2f",
+                    key=f"exc_range_{i}",
+                )
+                exclude_ranges.append(exc_range)
+                st.markdown(
+                    f'<div style="font-family:Space Mono,monospace;font-size:0.58rem;'
+                    f'color:#ff1744;margin-bottom:0.3rem;">'
+                    f'✂ excluye [{exc_range[0]:.2f} – {exc_range[1]:.2f}]</div>',
+                    unsafe_allow_html=True
+                )
 
         st.markdown("---")
         st.markdown('<div class="section-title">💰 OBJETIVO</div>', unsafe_allow_html=True)
@@ -582,13 +619,14 @@ def main():
 
     invertir = st.session_state['direccion'] == 'invertir'
     params = dict(
-        tiers         = tiers if tiers else ['D'],
-        horas_sel     = sorted(st.session_state.get('horas_sel', list(range(24)))),
-        confianza_min = float(confianza_min) if use_filters else 0.0,
-        quote_min     = float(quote_range[0]) if use_filters else 0.01,
-        quote_max     = float(quote_range[1]) if use_filters else 0.99,
-        target_win    = float(target_win),
-        invertir      = invertir,
+        tiers          = tiers if tiers else ['D'],
+        horas_sel      = sorted(st.session_state.get('horas_sel', list(range(24)))),
+        confianza_min  = float(confianza_min) if use_filters else 0.0,
+        quote_min      = float(quote_range[0]) if use_filters else 0.01,
+        quote_max      = float(quote_range[1]) if use_filters else 0.99,
+        exclude_ranges = exclude_ranges if use_filters else [],
+        target_win     = float(target_win),
+        invertir       = invertir,
     )
 
     if run_btn or 'trades' not in st.session_state:
@@ -674,17 +712,26 @@ def main():
         p   = st.session_state.get('params', params)
         hs  = sorted(p.get('horas_sel', []))
         hs_s = ', '.join([f"{h}h" for h in hs]) if hs else '—'
-        cols = st.columns(5)
+        exc  = p.get('exclude_ranges', [])
+        exc_s = '  '.join([f"[{mn:.2f}–{mx:.2f}]" for mn, mx in exc]) if exc else '—'
+
+        cols = st.columns(6)
         info = [
-            ("Tier",        ', '.join(p['tiers'])),
-            ("Horas",       hs_s),
-            ("Confianza ≥", f"{p['confianza_min']:.0f}%"),
-            ("Entry Price", f"{p['quote_min']:.2f}–{p['quote_max']:.2f}"),
-            ("Dirección",   "INVERTIR 🔄" if p.get('invertir') else "SEGUIR ✅"),
+            ("Tier",          ', '.join(p['tiers'])),
+            ("Horas",         hs_s),
+            ("Confianza ≥",   f"{p['confianza_min']:.0f}%"),
+            ("Entry Price",   f"{p['quote_min']:.2f}–{p['quote_max']:.2f}"),
+            ("Excluidos",     exc_s),
+            ("Dirección",     "INVERTIR 🔄" if p.get('invertir') else "SEGUIR ✅"),
         ]
         for col, (lbl, val) in zip(cols, info):
             with col:
-                color = "#ff1744" if lbl=="Dirección" and p.get('invertir') else "#00e5ff"
+                if lbl == "Dirección":
+                    color = "#ff1744" if p.get('invertir') else "#00e5ff"
+                elif lbl == "Excluidos" and exc:
+                    color = "#ff6b35"
+                else:
+                    color = "#00e5ff"
                 st.markdown(f"""
                 <div style="background:#0d1520;border:1px solid #1a2d40;border-radius:6px;
                             padding:0.7rem 0.8rem;text-align:center;">
