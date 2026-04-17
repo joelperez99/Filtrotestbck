@@ -268,6 +268,12 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def run_strategy(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     data = df.copy()
+    if params.get('meses_sel') and 'Fecha' in data.columns:
+        data['_mes'] = pd.to_datetime(data['Fecha']).dt.month
+        data = data[data['_mes'].isin(params['meses_sel'])].drop(columns=['_mes'])
+    if params.get('dias_sel') and 'Fecha' in data.columns:
+        data['_dia'] = pd.to_datetime(data['Fecha']).dt.day
+        data = data[data['_dia'].isin(params['dias_sel'])].drop(columns=['_dia'])
     if params['tiers']:
         data = data[data['Tier'].isin([t.upper() for t in params['tiers']])]
     horas_sel = params.get('horas_sel', list(range(24)))
@@ -427,6 +433,32 @@ def build_excel_download(trades: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+PRESETS = {
+    "TIER D INVERTIDA": {
+        "tiers":         ["D"],
+        "direccion":     "invertir",
+        "horas_sel":     [0, 1, 5, 6, 11, 12, 13, 14, 20, 22, 23],
+        "quote_min":     0.35,
+        "quote_max":     0.99,
+        "confianza_min": 0.0,
+    },
+    "TIER D SIGUIENDO": {
+        "tiers":         ["D"],
+        "direccion":     "seguir",
+        "horas_sel":     [2, 3, 15, 16, 17, 18, 19],
+        "quote_min":     0.50,
+        "quote_max":     0.99,
+        "confianza_min": 0.0,
+    },
+}
+
+MESES_NAMES = {
+    1:"Enero", 2:"Febrero", 3:"Marzo", 4:"Abril",
+    5:"Mayo",  6:"Junio",   7:"Julio", 8:"Agosto",
+    9:"Septiembre", 10:"Octubre", 11:"Noviembre", 12:"Diciembre",
+}
+
+
 def metric_card(label, value, color='white', prefix='', suffix=''):
     st.markdown(f"""
     <div class="metric-card">
@@ -437,8 +469,12 @@ def metric_card(label, value, color='white', prefix='', suffix=''):
 
 
 def main():
-    if 'direccion' not in st.session_state: st.session_state['direccion'] = 'seguir'
-    if 'horas_sel' not in st.session_state: st.session_state['horas_sel'] = list(range(24))
+    if 'direccion'           not in st.session_state: st.session_state['direccion']           = 'seguir'
+    if 'horas_sel'           not in st.session_state: st.session_state['horas_sel']           = list(range(24))
+    if 'tiers_widget'        not in st.session_state: st.session_state['tiers_widget']        = ['D']
+    if 'confianza_widget'    not in st.session_state: st.session_state['confianza_widget']    = 0.0
+    if 'quote_range_widget'  not in st.session_state: st.session_state['quote_range_widget']  = (0.38, 0.99)
+    if 'strategy_mode_widget' not in st.session_state: st.session_state['strategy_mode_widget'] = "🎯 Combo Strategy (Filtros activos)"
 
     _trades_ready = 'trades' in st.session_state and not st.session_state['trades'].empty
     _col_hdr, _col_dl = st.columns([5, 1])
@@ -489,16 +525,45 @@ def main():
         )
 
         st.markdown("---")
+        st.markdown('<div class="section-title">⚡ PRESETS</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-family:Space Mono,monospace;font-size:0.58rem;'
+            'color:#5a7080;margin-bottom:0.5rem;">Carga configuración predefinida</div>',
+            unsafe_allow_html=True,
+        )
+        _pc1, _pc2 = st.columns(2)
+        with _pc1:
+            if st.button("🔄 D INVERTIDA", key="preset_invertida", use_container_width=True):
+                _pr = PRESETS["TIER D INVERTIDA"]
+                st.session_state['tiers_widget']         = _pr['tiers']
+                st.session_state['direccion']            = _pr['direccion']
+                st.session_state['horas_sel']            = _pr['horas_sel']
+                st.session_state['quote_range_widget']   = (_pr['quote_min'], _pr['quote_max'])
+                st.session_state['confianza_widget']     = _pr['confianza_min']
+                st.session_state['strategy_mode_widget'] = "🎯 Combo Strategy (Filtros activos)"
+                st.rerun()
+        with _pc2:
+            if st.button("✅ D SIGUIENDO", key="preset_siguiendo", use_container_width=True):
+                _pr = PRESETS["TIER D SIGUIENDO"]
+                st.session_state['tiers_widget']         = _pr['tiers']
+                st.session_state['direccion']            = _pr['direccion']
+                st.session_state['horas_sel']            = _pr['horas_sel']
+                st.session_state['quote_range_widget']   = (_pr['quote_min'], _pr['quote_max'])
+                st.session_state['confianza_widget']     = _pr['confianza_min']
+                st.session_state['strategy_mode_widget'] = "🎯 Combo Strategy (Filtros activos)"
+                st.rerun()
+
+        st.markdown("---")
         st.markdown('<div class="section-title">📋 ESTRATEGIA</div>', unsafe_allow_html=True)
         strategy_mode = st.selectbox("Modo", [
             "🎯 Combo Strategy (Filtros activos)",
             "📊 Sin estrategia (todos los trades)"
-        ])
+        ], key='strategy_mode_widget')
         use_filters = strategy_mode.startswith("🎯")
 
         st.markdown("---")
         st.markdown('<div class="section-title">🏷 TIER</div>', unsafe_allow_html=True)
-        tiers = st.multiselect("Tiers a incluir", ['S','A','B','C','D'], default=['D'])
+        tiers = st.multiselect("Tiers a incluir", ['S','A','B','C','D'], key='tiers_widget')
 
         # ── DIRECCION ─────────────────────────────────────────────────────────
         st.markdown("---")
@@ -606,8 +671,8 @@ def main():
         st.markdown('<div class="section-title">📈 CONFIANZA</div>', unsafe_allow_html=True)
         confianza_min = st.slider("Confianza mínima (%)",
                                    min_value=0.0, max_value=100.0,
-                                   value=0.0 if not use_filters else 50.0,
-                                   step=1.0, disabled=not use_filters)
+                                   step=1.0, disabled=not use_filters,
+                                   key='confianza_widget')
 
         # ── RANGO DE CUOTAS ───────────────────────────────────────────────────
         st.markdown("---")
@@ -616,8 +681,8 @@ def main():
         # Rango base de inclusión
         quote_range = st.slider("Rango base (incluir)",
                                  min_value=0.01, max_value=0.99,
-                                 value=(0.38, 0.99) if not use_filters else (0.55, 0.99),
-                                 step=0.01, format="%.2f", disabled=not use_filters)
+                                 step=0.01, format="%.2f", disabled=not use_filters,
+                                 key='quote_range_widget')
 
         # 4 rangos de exclusión
         st.markdown("""
@@ -659,6 +724,34 @@ def main():
         target_win = st.number_input("Ganancia objetivo ($)",
                                       min_value=100, max_value=100000, value=1000, step=100)
 
+        # ── MES Y DIA ─────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown('<div class="section-title">📅 MES Y DÍA</div>', unsafe_allow_html=True)
+        _mes_opts = [f"{v}" for v in MESES_NAMES.values()]
+        _mes_raw  = st.multiselect("Mes", _mes_opts,
+                                   placeholder="Todos los meses", key='meses_widget',
+                                   default=[])
+        meses_sel = [k for k, v in MESES_NAMES.items() if v in _mes_raw]
+
+        dias_sel = st.multiselect("Día del mes", list(range(1, 32)),
+                                  placeholder="Todos los días", key='dias_widget',
+                                  default=[])
+
+        if meses_sel or dias_sel:
+            _tags = []
+            if meses_sel:
+                _tags.append("📅 " + ", ".join(MESES_NAMES[m] for m in sorted(meses_sel)))
+            if dias_sel:
+                _tags.append("📆 días: " + ", ".join(str(d) for d in sorted(dias_sel)))
+            st.markdown(
+                f'<div style="background:rgba(0,229,255,0.05);border:1px solid #1a2d40;'
+                f'border-radius:4px;padding:0.4rem 0.6rem;margin-top:0.3rem;'
+                f'font-family:Space Mono,monospace;font-size:0.58rem;'
+                f'color:#00e5ff;line-height:1.8;">'
+                f'{"  ·  ".join(_tags)}</div>',
+                unsafe_allow_html=True,
+            )
+
         st.markdown("---")
         run_btn = st.button("▶  EJECUTAR BACKTEST", use_container_width=True, key="run_main")
 
@@ -672,6 +765,8 @@ def main():
         exclude_ranges = exclude_ranges if use_filters else [],
         target_win     = float(target_win),
         invertir       = invertir,
+        meses_sel      = meses_sel,
+        dias_sel       = list(dias_sel),
     )
 
     if run_btn or 'trades' not in st.session_state:
@@ -760,7 +855,12 @@ def main():
         exc  = p.get('exclude_ranges', [])
         exc_s = '  '.join([f"[{mn:.2f}–{mx:.2f}]" for mn, mx in exc]) if exc else '—'
 
-        cols = st.columns(6)
+        _ms  = p.get('meses_sel', [])
+        _ds  = p.get('dias_sel',  [])
+        ms_s = ', '.join(MESES_NAMES[m][:3] for m in sorted(_ms)) if _ms else 'Todos'
+        ds_s = ', '.join(str(d) for d in sorted(_ds)) if _ds else 'Todos'
+
+        cols = st.columns(8)
         info = [
             ("Tier",          ', '.join(p['tiers'])),
             ("Horas",         hs_s),
@@ -768,6 +868,8 @@ def main():
             ("Entry Price",   f"{p['quote_min']:.2f}–{p['quote_max']:.2f}"),
             ("Excluidos",     exc_s),
             ("Dirección",     "INVERTIR 🔄" if p.get('invertir') else "SEGUIR ✅"),
+            ("Mes",           ms_s),
+            ("Día",           ds_s),
         ]
         for col, (lbl, val) in zip(cols, info):
             with col:
@@ -775,6 +877,8 @@ def main():
                     color = "#ff1744" if p.get('invertir') else "#00e5ff"
                 elif lbl == "Excluidos" and exc:
                     color = "#ff6b35"
+                elif lbl in ("Mes", "Día") and val != "Todos":
+                    color = "#ffd600"
                 else:
                     color = "#00e5ff"
                 st.markdown(f"""
